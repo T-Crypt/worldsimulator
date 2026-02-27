@@ -1,0 +1,1426 @@
+Engineering a Spatial Intelligence Simulator: A Technical Blueprint for Browser-Based Geospatial Data Fusion and Non-Photorealistic Rendering
+The convergence of global-scale photogrammetry, real-time telemetry, and advanced graphics programming within the browser environment represents a profound paradigm shift in geospatial intelligence. Historically, the synthesis of multidimensional sensor data—ranging from low-earth orbit satellite tracking to granular street-level surveillance—has been the exclusive purview of highly classified, military-grade Command, Control, Communications, Computers, Intelligence, Surveillance, and Reconnaissance (C4ISR) systems. However, the emergence of projects conceptualized as "spatial intelligence" prototypes demonstrates that the capability to render a panoptic, continuously updating digital twin of the physical world is now accessible using entirely public application programming interfaces (APIs) and open-source infrastructure.   
+
+This comprehensive report details the exact architectural components, mathematical models, data ingestion pipelines, custom shader architectures, and artificial intelligence-driven development workflows required to recreate an advanced, browser-based surveillance simulator. The resulting infrastructure acts as a foundational spatial operating system, fusing real-time open-source intelligence (OSINT) with aesthetic paradigms ranging from military-grade thermal imaging to non-photorealistic cel-shaded animation. Beyond the technical execution, this architecture manifests the theoretical concept of "sousveillance"—equipping the civilian user with the observational superiority traditionally reserved for state actors, thereby fundamentally shifting the asymmetry of global observation.   
+
+Geospatial Infrastructure and Volumetric Rendering
+The foundation of any planetary-scale visualization is a highly optimized, navigable three-dimensional globe capable of streaming petabytes of geometric and texture data without overwhelming client-side computational resources. The architectural requirement is not merely to display a map, but to render a fully volumetric, queryable representation of the physical environment.
+
+Leveraging Google Photorealistic 3D Tiles
+The simulator utilizes Google’s Photorealistic 3D Tiles, the exact volumetric mapping technology that powers Google Earth’s high-resolution urban models. These models are generated through massive-scale aerial photography and advanced photogrammetry algorithms, transforming the physical world into an immersive, textured 3D mesh that captures intricate architectural details, topography, and vegetation.   
+
+Access to this data is provisioned through the Google Maps Platform Map Tiles API. The API serves data formatted according to the Open Geospatial Consortium (OGC) 3D Tiles specification. This specification is specifically designed for streaming massive heterogeneous 3D geospatial datasets over the web. The underlying architecture of 3D Tiles relies on a spatial data structure—typically an octree or a bounding volume hierarchy—that implements Hierarchical Level of Detail (HLOD).   
+
+The HLOD algorithm dynamically calculates the geometric error and distance from the virtual camera to the asset. It selectively streams high-resolution textures and dense geometry only for the areas occupying the user's immediate field of view, while seamlessly substituting heavily simplified, coarse representations for distant horizons. This recursive subdivision ensures that memory bandwidth and GPU processing power are conserved, maintaining a strict 60 frames-per-second rendering target even when visualizing an entire metropolitan area.   
+
+Feature	Specification / Technology	Primary Function
+Data Format	OGC 3D Tiles (glTF payload)	Standardized streaming of massive 3D models over HTTP.
+Spatial Indexing	Octree / Bounding Volume Hierarchy	Organizes geometric data for efficient frustum culling and LOD selection.
+Coordinate Reference	WGS84 Ellipsoid	Mathematical standard for positioning real-world geographic coordinates.
+Photogrammetry Source	Google Maps Platform	Aerial imagery converted into dense 3D meshes via bundle adjustment.
+Integration via the CesiumJS Rendering Engine
+To ingest and render the Google Photorealistic 3D Tiles within a standard web browser, the architecture relies on CesiumJS. CesiumJS is an open-source JavaScript library specialized for hardware-accelerated WebGL 3D geospatial visualization.   
+
+Integrating this baseline involves initializing a Cesium Viewer instance. For a project focused purely on urban volumetric data, the default global terrain and base imagery layers are explicitly disabled to prevent Z-fighting and visual artifacts, allowing the Google 3D Tiles to act as the sole geographic environment. The application requests the data via a root tileset URL authenticated with a Google Cloud API key. Through the asynchronous Cesium.createGooglePhotorealistic3DTileset() function, the application streams the global mesh as a unified Cesium3DTileset primitive, appending it directly to the scene's primitive collection.   
+
+The underlying coordinate system of CesiumJS operates on the World Geodetic System 1984 (WGS84) ellipsoid. Consequently, all incoming sensor data—whether a latitude/longitude pair from an aircraft or an orbital vector from a satellite—must be mathematically projected from its native coordinate space into Earth-Centered, Earth-Fixed (ECEF) Cartesian coordinates (Cartesian3) to be accurately positioned within the 3D scene.   
+
+Real-Time Telemetry Data Ingestion and Fusion
+With the static volumetric world established, the system must be populated with dynamic, real-time entities. The illusion of a living, panoptic surveillance interface relies on the continuous, asynchronous ingestion and visualization of live tracking data across multiple spatial domains: high-altitude aviation, orbital mechanics, and street-level ground logistics.   
+
+Aviation Tracking: OpenSky Network and ADS-B Exchange
+To populate the sky with accurately positioned aircraft, the architecture aggregates data from two distinct, yet complementary, Automatic Dependent Surveillance-Broadcast (ADS-B) networks. ADS-B technology allows modern aircraft to determine their position via satellite navigation and periodically broadcast their precise GPS location, altitude, and velocity over the 1090 MHz radio frequency.   
+
+The OpenSky Network API provides access to over 7,000 live commercial aircraft positions globally. The system retrieves this data via a REST API endpoint (/api/states/all) that returns highly structured JSON objects known as "State Vectors". A state vector is a comprehensive summary of a transponder's tracking information at a specific Unix timestamp. The payload array includes the aircraft's unique 24-bit ICAO (International Civil Aviation Organization) transponder address, call sign, WGS84 latitude and longitude, barometric altitude, geometric altitude, velocity, and true track heading.   
+
+Because OpenSky caches and automatically drops state vectors if position data becomes older than 15 seconds, the application must continuously poll the endpoint. To prevent visual stuttering caused by the polling interval, the client-side JavaScript must linearly interpolate the aircraft's position between updates, utilizing the provided velocity and heading vectors to predict the aircraft's smooth movement across the Cesium globe.   
+
+To augment commercial traffic with military, state, and VIP flights, the system simultaneously queries the ADS-B Exchange API. Unlike commercial flight tracking services that heavily censor or filter specific aircraft based on FAA block lists (such as the LADD program), ADS-B Exchange relies on a global network of independent, unfiltered Software Defined Radio (SDR) receivers managed by volunteers. Furthermore, for aircraft not equipped with modern ADS-B out transponders, ADS-B Exchange utilizes Multilateration (MLAT) to calculate aircraft positions based on the Time Difference of Arrival (TDOA) of standard Mode S signals received by multiple ground stations.   
+
+Through the ADS-B Exchange API (specifically the v2 endpoint), developers can access a bitfield of database flags where specific bitwise operations indicate the nature of the aircraft. By parsing the dbFlags integer, the application filters the incoming arrays to isolate specific targets:   
+
+military = dbFlags & 1
+
+interesting = dbFlags & 2
+
+PIA (Privacy ICAO Address) = dbFlags & 4    
+
+Once isolated, these military callsigns are mapped to 3D glTF models of military aircraft within the Cesium scene. The system utilizes Cesium's SampledPositionProperty to manage the time-dynamic data, allowing the engine to automatically draw altitude trails and persistent identification tags that follow the exact interpolated path of the aircraft.   
+
+Telemetry API	Primary Data Focus	Identification Method	Update Frequency
+OpenSky Network	Global Commercial Aviation	24-bit ICAO Address	Near Real-Time (Polling)
+ADS-B Exchange	Unfiltered Military / VIP / MLAT	24-bit ICAO Address / Non-ICAO (TIS-B)	Real-Time (Up to 2 Hz)
+Orbital Mechanics: CelesTrak and SGP4 Propagation
+To achieve the ultimate "God mode" perspective, the system tracks over 180 satellites in real-time orbit, allowing the user to view the physical infrastructure of global surveillance and communication. Tracking spacecraft requires entirely different mathematical models than atmospheric aviation, as satellites operate in a microgravity vacuum subject to complex orbital dynamics.   
+
+The system sources public satellite positioning data from CelesTrak in the form of Two-Line Element (TLE) sets. A TLE is a standardized, highly condensed data format created by NORAD that encodes a list of orbital elements of an Earth-orbiting object for a given point in time, known as the epoch. The parameters encoded within the 69-character lines include the satellite's inclination, right ascension of the ascending node, eccentricity, argument of perigee, mean anomaly, and mean motion.   
+
+Because satellites in Low Earth Orbit (LEO) are subject to complex gravitational perturbations from the sun and moon, atmospheric drag from the Earth's exosphere, and the non-spherical oblateness of the Earth (the J 
+2
+​
+  effect), their actual positions constantly drift from perfect Keplerian orbits. To calculate a satellite's precise location at the current execution frame, the application utilizes satellite.js, a specialized JavaScript library that implements the Simplified General Perturbations (SGP4) mathematical model. The SGP4 model takes the base TLE data and analytically propagates it forward or backward in time to predict the current state vector.   
+
+The programmatic flow requires passing the two strings of the TLE into the satellite.twoline2satrec function to create a satellite record object. In the application's rendering loop, the current JavaScript Date object (representing the precise simulation time) is passed into the satellite.propagate function. This function computes the satellite's position and velocity vectors in Earth-Centered Inertial (ECI) coordinates.   
+
+The ECI coordinate system is fixed in relation to the stars, meaning the Earth rotates beneath it. Because the Cesium globe rotates, these ECI coordinates must be translated into Earth-Centered, Earth-Fixed (ECEF) Cartesian coordinates. This transformation requires calculating the Greenwich Mean Sidereal Time (GMST) using satellite.gstime(date). By applying the GMST rotation matrix to the ECI vector, the system derives the geographic latitude, longitude, and altitude of the satellite. The final output is fed into a Cesium.Cartesian3.fromRadians function, continuously updating the physical position of a 3D satellite model in the browser and tracing its orbital trajectory across the WGS84 ellipsoid.   
+
+Ground Logistics: OpenStreetMap and Particle Systems
+Simulating vehicle flow on city streets adds crucial kinetic energy to the street-level view, contrasting the macro-scale satellite tracking with micro-scale urban movement. Rather than tracking individual live cars—which is computationally prohibitive and data-restricted at a global scale—the application generates realistic traffic flow using vector street data paired with WebGL particle systems.   
+
+The architecture queries OpenStreetMap (OSM) to extract road network geometry for the currently viewed bounding box. This vector data, consisting of interconnected nodes and line segments, forms a directed graph representing traffic flow directions, intersections, and road capacities.   
+
+Within CesiumJS, a Cesium.ParticleSystem is instantiated over these road segments. A standard particle system controls the appearance and behavior of individual Particle objects over time, utilizing parameters such as imageSize, emissionRate (particles born per second), and lifetime. The initial position of the particles is controlled by a ParticleEmitter, which is positioned on the globe using a modelMatrix (transforming local coordinates to world coordinates).   
+
+For a highly customized traffic simulation, the system utilizes the updateCallback function. This function executes on every simulation time step for every living particle. Instead of standard physics behaviors like gravity or wind, the updateCallback dynamically alters the particle's velocity vector to strictly follow the OSM vector splines. By parameterizing the startScale and endScale, and applying bounding rules for minimumSpeed and maximumSpeed, the system renders thousands of moving entities that visually behave like dense urban traffic. These kinetic pixels conform perfectly to the underlying Google 3D Tiles topography, bringing the static photogrammetry to life.   
+
+Live Video Draping and Spatial Texture Projection
+Perhaps the most complex and viscerally engaging feature of the simulator is the real-time projection of active Closed-Circuit Television (CCTV) footage directly onto the 3D geometry of the city. This capability transforms flat, disembodied video feeds into physically accurate spatial textures, achieving true panoptic synthesis.   
+
+The data source for this implementation relies on municipal open data portals. Using the City of Austin's Traffic Camera API as the primary feed, developers can access a constantly updating dataset containing the precise WGS84 latitude and longitude, camera orientation, and live stream URLs of hundreds of active monitoring cameras. These streams are typically encoded in standard formats such as HTTP Live Streaming (HLS) or Motion JPEG (MJPEG).   
+
+Projecting a live, continuously updating two-dimensional video onto a complex, irregular three-dimensional mesh (such as the side of a photogrammetric building and the adjacent street) requires advanced WebGL texture mapping techniques. The process begins in the Document Object Model (DOM). An invisible HTML5 <video> element is instantiated to continuously buffer and decode the HLS or MJPEG stream. Within Cesium's internal render loop, a specific WebGL API call, texSubImage2D, is executed every frame. This function copies the current pixel array from the HTML5 video element directly into a WebGL texture object residing in the GPU's memory.   
+
+To drape this dynamic video texture onto the physical environment, the system utilizes projective texture mapping. The application must calculate a transformation matrix representing the real-world camera's optical properties. This requires defining the camera's exact geographic origin (derived from the Austin API), its heading (pan), pitch (tilt), roll, and its Field of View (FOV).   
+
+A custom fragment shader, implemented via the Cesium.CustomShader API, is applied globally to the Cesium3DTileset. For every fragment (pixel) of the 3D city mesh being rasterized, the shader performs a reverse projection. It multiplies the fragment's 3D world coordinates by the inverse of the CCTV camera's view-projection matrix.   
+
+v
+
+  
+projected
+​
+ =M 
+projection
+​
+ ×M 
+view
+​
+ × 
+v
+
+  
+world
+​
+ 
+If the resulting coordinates fall within the normalized device coordinates (NDC) range of [−1,1] in both the X and Y axes, and the fragment is not occluded by other geometry (determined by evaluating the depth buffer), the fragment is considered to be inside the camera's frustum. The shader then samples the corresponding UV coordinate from the live video texture and mathematically blends it over the base photogrammetric texture of the building. The result is a realistic "flashlight" effect, where real-world surveillance video paints the digital twin in real time, perfectly adhering to the physical contours, elevations, and occlusions of the urban environment.   
+
+Advanced Shader Pipelines and Visual Paradigms
+The visual language of the simulator fundamentally defines its psychological impact. The system deliberately discards default photorealism in favor of heavily stylized post-processing architectures and custom shading models. These custom WebGL Shading Language (GLSL) programs dictate how the final rasterized image is presented on the screen, allowing the user to seamlessly switch between highly engineered military sensor modes and non-photorealistic artistic styles.   
+
+Simulating Military and Intelligence Optics
+The interface utilizes a "surveillance aesthetic" derived from studying the precise engineering specifications of actual military display systems. These legacy systems were not designed for visual beauty; they were engineered to strip away irrelevant visual noise, maximize contrast, and highlight kinematic anomalies or thermal signatures.   
+
+Night Vision Goggles (NVG):
+To simulate Image Intensification (I 
+2
+ ) devices utilized in military covert operations, the architecture implements a custom post-processing stage applied to the final frame buffer. A standard NVG shader begins by converting the rendered scene's RGB output into a monochromatic luminance value, commonly calculated using the standard dot product of the RGB vector and the human eye's luminance perception weights [0.299,0.587,0.114].   
+
+The shader then applies a deep green tint matrix, mathematically mapping the luminance to the specific spectral output of P43 or P22 military phosphors. To accurately replicate the physical limitations of an image intensifier tube operating in low-light environments, high-frequency spatial noise is procedurally generated using a pseudo-random hash function in GLSL. This noise simulates photon starvation and the electronic scintillation inherent to analog microchannel plates. Furthermore, an artificial vignette is applied to the screen edges to restrict the Field of View (FOV), mimicking the optical constraints of peering through physical binocular tubes.   
+
+Forward-Looking Infrared (FLIR):
+Thermal imaging does not rely on ambient light; it visualizes the radiated heat of objects in the scene. Simulating FLIR in a standard 3D rendering pipeline requires clever approximations, as the Google 3D Tiles do not inherently contain thermodynamic metadata or material emissivity values.   
+
+The shader pipeline achieves this by accessing the depth buffer of the rendered scene, utilizing the geometric distance from the camera as a proxy for atmospheric attenuation and general thermal presence. To simulate the distinct "white-hot" or "black-hot" polarity of military FLIR displays, the GLSL fragment shader discards the diffuse color data entirely. Instead, it maps the scene's calculated luminance and depth values to a restricted, monochromatic gradient ramp. The system leverages the semantic awareness of the simulator; dynamic elements injected into the scene—such as the simulated vehicle particles or the ADS-B aircraft models—are forcefully rendered at maximum intensity (pure white or pure black, depending on polarity). The static background infrastructure (the 3D tiles) is relegated to cooler, washed-out grays, effectively making the targets "glow" against the environment. Additionally, dynamic targeting reticles—rendered as screen-space user interface elements—are overlaid, automatically snapping to the computed 2D screen coordinates of the 3D tracked entities.   
+
+CRT Monitor Emulation:
+To complete the retro-intelligence analyst aesthetic, the final output is fed through a Cathode Ray Tube (CRT) simulation shader. This complex post-processing effect replicates the physical artifacts of an analog monitor. The shader loops over the vertical pixel coordinates (V-axis) using a high-frequency sine function to multiply pixel brightness, resulting in alternating dark and bright horizontal bands that create a persistent scanline effect.   
+
+To emulate the curvature of a physical glass screen, a radial barrel distortion algorithm is applied to the UV coordinates. As pixels are pushed outward toward the edges of the screen, the shader introduces chromatic aberration by sampling the red, green, and blue texture channels at slightly offset UV coordinates, simulating the misalignment of the electron guns in older hardware.   
+
+Non-Photorealistic Rendering: The Anime Cel-Shader
+In a jarring conceptual shift, the simulator includes an "Anime Mode," which renders the military surveillance infrastructure, live telemetry, and volumetric city models in the hand-drawn, pastoral style of a Studio Ghibli film. The developer explicitly noted that the contrast between the menacing nature of the data and the wondrous aesthetics forces the user to reconsider what visual styling actually communicates to the observer.   
+
+Creating an anime aesthetic over highly complex photogrammetry requires overriding standard physically-based rendering (PBR) with a specialized non-photorealistic rendering (NPR) technique known as cel-shading (or toon-shading). This is achieved by injecting a CustomShader directly into the Cesium3DTileset material pipeline.   
+
+The foundational mathematical principle of cel-shading is the quantization of light. In a standard shader, the continuous gradient of light falling across a surface is calculated using the dot product of the surface normal vector ( 
+N
+
+ ) and the main light direction vector ( 
+L
+
+ ).   
+
+Diffuse Illumination=max(0, 
+N
+
+ ⋅ 
+L
+
+ )
+Instead of allowing this dot product to create a smooth gradient, the custom fragment shader forces the illumination into discrete steps. Using GLSL step functions, or by using the dot product as a coordinate to sample a 1D lookup texture, the lighting is compressed into two or three distinct, flat color bands (e.g., a deep shadow tone, a base mid-tone, and a sharp highlight).   
+
+To achieve the crisp, ink-drawn outlines critical to the anime style, the shader must perform real-time edge detection. This can be accomplished through two primary methods. The first is a post-processing Sobel filter that analyzes discontinuities in the depth and normal buffers across neighboring pixels; sharp changes indicate an object's edge. Alternatively, the fragment shader can perform a Fresnel-like calculation, evaluating the dot product of the surface normal and the camera view vector. Surfaces whose normals are nearly perpendicular to the camera are deemed silhouettes and rendered pure black. Combined with subtle procedural noise applied to the diffuse textures to mimic watercolor brush strokes, the resulting output strips the realistic menace of the 3D models, replacing it with stylized, flat artistry.   
+
+Shader Paradigm	Core GLSL Techniques	Visual Output	Psychological Purpose
+Night Vision (NVG)	Luminance extraction, phosphor color mapping, spatial noise generation.	Granular, bright green monochromatic display with heavy vignetting.	Simulates optical image intensification and low-light operations.
+FLIR Thermal	Depth-buffer mapping, polarity gradient mapping, diffuse discarding.	High-contrast, monochromatic visualization highlighting heat signatures.	Emulates long-wave infrared sensors for rapid target acquisition.
+CRT Scanlines	Sine-wave vertical UV modulation, barrel distortion, chromatic aberration.	Distorted, horizontally striped monitor feed with color bleeding.	Replicates legacy analog monitor hardware and signal degradation.
+Anime Cel-Shading	Normal-light dot product quantization, step functions, Sobel edge detection.	Flat, banded color palettes with distinct, hard-drawn black outlines.	Strips reality, simulating traditional Japanese animation for aesthetic contrast.
+AI-Driven Orchestration and Multi-Agent Terminal Workflows
+The complexity of integrating varied APIs, computing orbital mechanics, handling WebGL video textures, and writing matrix-level shader mathematics would traditionally require a multi-disciplinary engineering team months to execute. However, this simulator was conceptualized and constructed by a single developer over a single weekend. This unprecedented velocity was achieved not through traditional manual coding, but by orchestrating multiple Large Language Model (LLM) coding agents running concurrently in a highly structured terminal environment.   
+
+Transitioning from IDEs to the Terminal Control Plane
+The development methodology utilized for this project bypassed modern, AI-integrated IDEs (Integrated Development Environments) like Cursor entirely. Instead, the developer utilized a multi-agent terminal workflow, engaging frontier models like Anthropic's Claude 4.6 (Opus), Google's Gemini 3.1 Pro, and OpenAI's Codex 5.3 directly through Command Line Interfaces (CLIs).   
+
+The developer deployed up to eight AI agents simultaneously, treating each LLM as an autonomous subsystem engineer. For example, one instance of Claude Code was tasked entirely with building the CelesTrak TLE parsing logic; a Gemini CLI instance was assigned the implementation of the CustomShader pipeline for the anime aesthetic; and a Codex agent was instructed to wire the WebGL video textures for the CCTV feeds.   
+
+In a standard development workflow, deploying multiple AI agents simultaneously on a single codebase results in catastrophic Git merge conflicts, file overwriting, and terminal chaos as the models vie for control of the same files. To solve this critical bottleneck, developers leverage advanced orchestration tools—such as the open-source "Parallel Code" application or complex tmux (terminal multiplexer) configurations. These tools act as a local-first control plane for multi-agent workflows.   
+
+Git Worktree Isolation and Agent Autonomy
+To execute these complex tasks concurrently without interference, the orchestration tool relies heavily on Git Worktree isolation. Unlike traditional branching—where switching branches changes the files in the single current working directory—a Git worktree checks out a branch into a completely separate physical directory on the hard drive.   
+
+When the developer dispatches a task, the orchestration software automatically creates a new Git branch and sets up a dedicated worktree directory. To optimize compute time and disk space across eight simultaneous instances, heavy dependencies (like the node_modules folder) are symlinked between the primary repository and the new worktrees.   
+
+Once isolated, an instance of the specific AI CLI is spawned inside the sandboxed directory. The developer commands these agents using multi-modal inputs, passing voice notes describing the desired behavior and injecting screenshots of intended visual outputs (such as military display specifications or anime reference frames) directly into the prompt context.   
+
+The models operate autonomously within their directories—reading files, analyzing documentation, executing terminal commands to run local servers, writing code, and running test suites. The developer acts as a high-level systems architect, monitoring the tiled terminal interfaces. When an agent hits an execution block or requires permission to run a bash script, the specific terminal cell flags the user, requesting human approval. Upon the successful completion of a subsystem, the developer reviews the code diffs and merges the isolated worktrees back into the main repository via the orchestrator's interface. This asynchronous, parallel execution paradigm fundamentally alters software engineering, allowing a single human to direct a synthetic engineering team to produce production-grade geospatial software in a fraction of the traditional time.   
+
+Conclusion: The Horizon of Spatial Intelligence
+The architectural convergence required to build the WorldView simulator extends far beyond a technical demonstration of WebGL and API integration. It represents the nascent stages of "Spatial Intelligence".   
+
+While traditional computer vision focuses on flat, two-dimensional image recognition (e.g., identifying "a vehicle"), spatial intelligence systems understand complex spatial relationships, kinematic tracking over time, and real-world topological context (e.g., tracking "that specific vehicle, moving at that specific speed, through that specific intersection, observed by that specific camera"). By structuring the physical world into a continuously updating, queryable digital model, developers are establishing the foundational "SpatialOS" stack required for the next generation of autonomous robotics, advanced global logistics, and smart city infrastructure.   
+
+Furthermore, the integration of wholly public open-source data into a military-style surveillance interface forces a profound reevaluation of modern power dynamics and privacy. Historically, the aesthetic of the panopticon—omnipresent, inescapable observation—belonged exclusively to the intelligence community and state actors. By wrapping open-source telemetry APIs and municipal traffic cameras in the visual language of classified systems, this technology manifests the concept of "sousveillance" (watching from below). It equips the civilian user with the same observational and analytical superiority traditionally reserved for the state, fundamentally shifting the asymmetry of global observation from the institution to the individual operating within a standard web browser.   
+
+
+
+llm.txt
+
+developers.google.com
+Photorealistic 3D Tiles | Google Maps Tile API
+Opens in a new window
+
+developers.google.com
+Photorealistic 3D Tiles overview | Google Maps Tile API - Google for Developers
+Opens in a new window
+
+cesium.com
+Introducing 3D Tiles - Cesium
+Opens in a new window
+
+cesium.com
+Optimizing 3D Tiles Streaming in Cesium for Unreal with Occlusion Culling
+Opens in a new window
+
+cesium.com
+Visualizing Massive Models using 3D Tiles - Cesium
+Opens in a new window
+
+developers.google.com
+Work with a 3D Tiles renderer | Google Maps Tile API - Google for Developers
+Opens in a new window
+
+cesium.com
+Photorealistic 3D Tiles from Google Maps Platform in CesiumJS
+Opens in a new window
+
+docs.foursquare.com
+Add Google 3D Tiles - Docs
+Opens in a new window
+
+cesium.com
+CesiumJS: Fundamentals – Cesium
+Opens in a new window
+
+discourse.threejs.org
+3DTilesRenderer with google 3d tiles - Questions - three.js forum
+Opens in a new window
+
+opensky-network.org
+Frequently Asked Questions - The OpenSky Network
+Opens in a new window
+
+openskynetwork.github.io
+The OpenSky Network API documentation - GitHub Pages
+Opens in a new window
+
+openskynetwork.github.io
+OpenSky REST API - GitHub Pages
+Opens in a new window
+
+opensky-network.org
+Scientific Datasets - The OpenSky Network
+Opens in a new window
+
+tomverbeure.github.io
+Setting Up an ADSB-Exchange Feeder - Electronics etc
+Opens in a new window
+
+adsbexchange.com
+Accessing Data Collected by ADS-B Exchange
+Opens in a new window
+
+rapidapi.com
+ADSBexchange.com - Rapid API
+Opens in a new window
+
+adsbexchange.com
+Version 2 API Fields - ADS-B Exchange
+Opens in a new window
+
+adsbexchange.com
+Map Help - ADS-B Exchange
+Opens in a new window
+
+daoneil.github.io
+Visualization of Orbital Debris with Cesium and Satellite-js - GitHub Pages
+Opens in a new window
+
+dev.to
+Create a satellite tracker from scratch in 30 lines of JavaScript - DEV Community
+Opens in a new window
+
+ntrs.nasa.gov
+Web-based Space Mission Visualization
+Opens in a new window
+
+community.cesium.com
+How to display GPS satellite trajectory with GPS precise orbit file - Cesium Community
+Opens in a new window
+
+researchgate.net
+Development of power grid Web3D GIS based on Cesium - ResearchGate
+Opens in a new window
+
+open.metu.edu.tr
+DETECTION AND DESCRIPTION OF TRAFFIC EVENTS USING FLOATING CAR AND SOCIAL MEDIA DATA A THESIS SUBMITTED TO THE GRADUATE SCHOOL O - Middle East Technical University
+Opens in a new window
+
+cesium.com
+Introduction to Particle Systems - Cesium
+Opens in a new window
+
+cesium.com
+ParticleSystem - Cesium Documentation
+Opens in a new window
+
+catalog.data.gov
+Traffic Cameras - Dataset - Catalog - Data.gov
+Opens in a new window
+
+data.austintexas.gov
+Traffic Cameras | Open Data | City of Austin, Texas
+Opens in a new window
+
+catalog.data.gov
+Dataset - Catalog - Data.gov
+Opens in a new window
+
+www-ai.cs.tu-dortmund.de
+Real-time feature extraction from video stream data for stream segmentation and tagging - TU Dortmund
+Opens in a new window
+
+medium.com
+From Traffic Cameras to Web Applications: A Streaming Architecture Overview - Medium
+Opens in a new window
+
+cesium.com
+Synchronized HTML5 Video with GPS Data - Cesium
+Opens in a new window
+
+researchgate.net
+(PDF) Extracting Objects' Spatial–Temporal Information Based on Surveillance Videos and the Digital Surface Model - ResearchGate
+Opens in a new window
+
+isprs-archives.copernicus.org
+SEMANTIC URBAN MESH SEGMENTATION BASED ON AERIAL OBLIQUE IMAGES AND POINT CLOUDS USING DEEP LEARNING
+Opens in a new window
+
+cesium.com
+CustomShader - Cesium Documentation
+Opens in a new window
+
+cesium.com
+Cesium3DTileset - Cesium Documentation
+Opens in a new window
+
+patents.google.com
+US9996976B2 - System and method for real-time overlay of map features onto a video feed
+Opens in a new window
+
+apps.dtic.mil
+Development Of A Night Driving Training Aid Concept. - DTIC
+Opens in a new window
+
+cesium.com
+PostProcessStageLibrary - Cesium Documentation
+Opens in a new window
+
+theses.fr
+TABLE DES MATIERES - Theses.fr
+Opens in a new window
+
+spie.org
+8th International Symposium on Advanced Optical Manufacturing and Testing Technologies - SPIE
+Opens in a new window
+
+mediatum.ub.tum.de
+Visual Augmentation for Rotorcraft Pilots in Degraded Visual Environment - mediaTUM
+Opens in a new window
+
+mvrsimulation.com
+Virtual Reality Scene Generator (VRSG) Version 7 User's Guide - MVRsimulation
+Opens in a new window
+
+spie.org
+Infrared Imaging Systems: Design, Analysis, Modeling, and Testing XXVI | (2015) - SPIE
+Opens in a new window
+
+gamedev.stackexchange.com
+shaders - How would one construct a realistic "infrared vision" effect?
+Opens in a new window
+
+spie.org
+Technical Abstract Summaries - SPIE
+Opens in a new window
+
+github.com
+glsl-shaders/crt/shaders/crtsim/composite.glsl at master - GitHub
+Opens in a new window
+
+github.com
+air/shaders: First steps with GLSL shaders. - GitHub
+Opens in a new window
+
+forums.libretro.com
+New simple scanline shader submission - Libretro Forums
+Opens in a new window
+
+cs.rpi.edu
+Advanced Real-н‐Time Cel Shading Techniques in OpenGL
+Opens in a new window
+
+medium.com
+Toon Shaders in Unity — From Shader Graph to Custom HLSL | by madcritter - Medium
+Opens in a new window
+
+github.com
+Unchained112/CelShadingProject_ComputerGraphics-Interaction: Seek a good method for cel shading on metal and galss objects in Blender and Unity - GitHub
+Opens in a new window
+
+yelzkizi.org
+Godot 4 Toon Shader Patterns: Ultimate Custom Shader - Yelzkizi
+Opens in a new window
+
+reddit.com
+Gemini 3.1 Pro - Day 1 review, versus Opus 4.6 and Codex 5.3 : r/google_antigravity
+Opens in a new window
+
+anthropic.com
+Introducing Claude Opus 4.6
+Opens in a new window
+
+github.com
+johannesjo/parallel-code: Run Claude Code, Codex, and Gemini side by side — each in its own git worktree - GitHub
+Opens in a new window
+
+darasoba.medium.com
+How to Set Up and Use Claude Code Agent Teams (And Actually Get Great Results)
+Opens in a new window
+
+medium.com
+The Hard Part of Agentic Coding Is Coordination | by Gaurav Yadav | Jan, 2026 | Medium
+Opens in a new window
+
+medium.com
+My LLM coding workflow going into 2026 | by Addy Osmani | Medium
+Opens in a new window
+
+reddit.com
+I built a terminal for running multiple Claude Code agents in parallel : r/ClaudeAI - Reddit
+Opens in a new window
+
+youtube.com
+Claude Code's Agent Teams IS INSANE! Deploy A Full AI Engineering Team! Multiple AI Agents Coding!
+Opens in a new window
+
+youtube.com
+Bilawal Sidhu - YouTube
+Opens in a new window
+
+youtube.com
+AI in 2026 Will Look Very Different | My Predictions & Updates - YouTube
+Opens in a new window
+
+infiniteloops.libsyn.com
+Infinite Loops - Libsyn
+Opens in a new window
+
+space-track.org
+Help Documentation - Space-Track.org
+Opens in a new window
+
+docs.zendir.io
+CelesTrak API Integration - Zendir
+Opens in a new window
+
+pyorbital.readthedocs.io
+Pyorbital — pyorbital 1.12.1.dev0+gcd410a926.d20260206 documentation
+Opens in a new window
+
+beebotte.com
+Use Beebotte to track the ISS position in real-time
+Opens in a new window
+
+eecs.yorku.ca
+Report on Selected Issues Related to NVG Use in a Canadian Security Context - Electrical Engineering and Computer Science - York University
+Opens in a new window
+
+spiedigitallibrary.org
+Technologies for Synthetic Environments: Hardware-in-the-Loop Testing - SPIE Digital Library
+Opens in a new window
+
+github.com
+parallel-agents · GitHub Topics
+Opens in a new window
+
+aliexpress.com
+SEMSPEED Air Filter Cover For Yamaha Zuma 125 2022-2025 Cygnus Gryphus 2020-2025 NMAX 125 155 150 2022-2025 - AliExpress
+Opens in a new window
+
+archive.org
+Full text of "The Times , 1992, UK, English" - Internet Archive
+Opens in a new window
+
+scribd.com
+Skills | PDF - Scribd
+Opens in a new window
+
+portal.tpu.ru
+MODERN TECHNIQUE AND TECHNOLOGIES MTT' 2011
+Opens in a new window
+
+kadajah.itch.io
+Kadajah's Battle Transitions - Physics + Shaders + Particles - Itch.io
+Opens in a new window
+
+cesium.com
+OpenStreetMapImageryProvider - Cesium Documentation
+Opens in a new window
+
+huggingface.co
+Opens in a new window
+
+cesium.com
+Visualizing 3D Terrain - Cesium
+Opens in a new window
+
+cesium.com
+Photogrammetry – Cesium
+Opens in a new window
+
+cesium.com
+Introducing 3D Tiles Next, Streaming Geospatial to the Metaverse - Cesium
+Opens in a new window
+
+techmeme.com
+Sources: The Bot Company, co-founded by ex-Cruise CEO Kyle Vogt to make AI-powered household robots, is set to raise $250M at a $4B+ valuation - Techmeme
+Opens in a new window
+
+techmeme.com
+In response to plagiarism allegations, Perplexity CEO Aravind Srinivas says the company “is not ignoring” robots.txt, but does rely on third-party web crawlers - Techmeme
+Opens in a new window
+
+science.gov
+infrared imaging seeker: Topics by Science.gov
+Opens in a new window
+
+static.aminer.org
+NASA Scientific and Technical Aerospace Reports - AMiner
+Opens in a new window
+
+spatialintelligence.ai
+Map the World by Bilawal Sidhu | Substack
+Opens in a new window
+
+researchgate.net
+Texture Mapping 3D Models of Real-World Scenes. - ResearchGate
+Opens in a new window
+
+github.com
+KML Support · Issue #873 · CesiumGS/cesium - GitHub
+Opens in a new window
+
+eleccelerator.com
+Outdoor Photogrammetry Adventures | Eleccelerator
+Opens in a new window
+
+ng-tech.icu
+Three.js-OpenSource-List | Next-gen Tech Edu
+Opens in a new window
+
+science.gov
+d3x digital camera: Topics by Science.gov
+Opens in a new window
+
+github.com
+Screen Space Rendering Details · CesiumGS/cesium Wiki - GitHub
+Opens in a new window
+
+cesium.com
+Cesium Sandcastle
+Opens in a new window
+
+docs.maptiler.com
+Cesium JS with MapTiler maps
+Opens in a new window
+
+agendas.addisontx.gov
+Regular Meeting of the City Council January 25, 2022 - Addison, Texas
+Opens in a new window
+
+sandcastle.cesium.com
+Custom Shaders 3D Tiles | Sandcastle | CesiumJS
+Opens in a new window
+
+cesium.com
+Streaming 3D Capture Data using 3D Tiles - Cesium
+Opens in a new window
+
+apps.dtic.mil
+Proceedings - DTIC
+Opens in a new window
+
+elib.dlr.de
+PROCEEDINGS OF SPIE
+Opens in a new window
+
+highways.dot.gov
+ALTERNATIVE APPROACHES TO INSPECTIONS FOR FEDERAL LAND MANAGEMENT AGENCY ROADS Draft Report
+Opens in a new window
+
+developer.download.nvidia.com
+NVIDIA Shader Library
+Opens in a new window
+
+reddit.com
+I would love a shader/mod that added outlines so much. Can you imagine? Ghibli style NMS : r/NoMansSkyTheGame - Reddit
+Opens in a new window
+
+cesium.com
+Sandcastle: CesiumJS Code Examples
+Opens in a new window
+
+community.cesium.com
+how to custom shader in 3d-tiles? - Cesium Community
+Opens in a new window
+
+github.com
+Exploring what's possible with Custom Shaders · Issue #9728 · CesiumGS/cesium - GitHub
+Opens in a new window
+
+archive.org
+Full text of "AIAA Flight Simulation Technologies Conference Technical Papers, Aug 11 13, 1997" - Internet Archive
+Opens in a new window
+
+academia.edu
+(PDF) Sarf Edilebilir Karşı Tedbir Atım Sisteminin Etkinliğinin Arttırılması - Academia.edu
+Opens in a new window
+
+science.gov
+hard real-time java: Topics by Science.gov
+Opens in a new window
+
+www2.avs.org
+Sunday Afternoon, October 19, 2008 - AVS.org
+Opens in a new window
+
+history.siggraph.org
+SIGGRAPH 2014: 41st Annual Conference on Computer Graphics and Interactive Techniques
+Opens in a new window
+
+youtube.com
+How To Draw GeoJSON on CesiumJS Retrieved From REST API Endpoint - YouTube
+Opens in a new window
+
+sandcastle.cesium.com
+Custom Shaders 3D Tiles | Sandcastle | CesiumJS
+Opens in a new window
+
+celestrak.org
+Orbital Propagation: Part I - CelesTrak
+Opens in a new window
+
+space.stackexchange.com
+Tutorial for orbits from TLE data - Space Exploration Stack Exchange
+Opens in a new window
+
+cesium.com
+Introduction to Cesium Stories
+Opens in a new window
+
+data.mobility.austin.gov
+Traffic cameras
+Opens in a new window
+
+cesium.com
+Enhancements to the Three.js 3D Tiles Renderer - Cesium
+Opens in a new window
+
+community.cesium.com
+How to Apply Photorealistic Textures and Styles to 3D Tileset Buildings in CesiumJS and Cesium for Unreal
+Opens in a new window
+
+youtube.com
+Explore the newly developed Cesium 3D Tiles for QGIS - YouTube
+Opens in a new window
+
+news.ycombinator.com
+GLSL Web CRT Shader - Hacker News
+Opens in a new window
+
+halisavakis.com
+My take on shaders: Cel shading - Harry Alisavakis
+Opens in a new window
+
+calv.info
+Coding Agents in Feb 2026 - Calvin French-Owen
+Opens in a new window
+
+reddit.com
+Live feed camera streams : r/ATAK - Reddit
+Opens in a new window
+
+youtube.com
+Thermal Vision Shader In Unity! (tutorial) - YouTube
+Opens in a new window
+
+youtube.com
+GLSL 101 Shaders for Everyone - VanTa - YouTube
+Opens in a new window
+
+aou-elibrary.com
+RSS - Arab Open University::Powered by DeepKnowledge
+Opens in a new window
+
+theneuron.ai
+Claude Opus 4.6 vs GPT-5.3-Codex: Full Breakdown (2026) - The Neuron
+Opens in a new window
+
+reddit.com
+We built 76K lines of code with Claude Code. Then we benchmarked it. 118 functions were running up to 446x slower than necessary. : r/ClaudeCode - Reddit
+Opens in a new window
+
+scouts.yutori.com
+AI devtools and infra shifts - Scouts by Yutori
+Opens in a new window
+
+news.smol.ai
+Company: anthropic | AINews
+Opens in a new window
+
+dev.epicgames.com
+Unreal VR + Cesium + Google Photorealistic 3D Tiles | Epic Developer Community
+Opens in a new window
+
+cesium.com
+Control the Camera - Cesium
+Opens in a new window
+
+txdot.gov
+See live traffic cameras - TxDOT.gov
+Opens in a new window
+
+cesium.com
+Visualize Travel Time in CesiumJS with Photorealistic 3D Tiles from Google Maps Platform and Esri ArcGIS Location Services – Cesium
+Opens in a new window
+
+cesium.com
+Styling and Filtering 3D Tiles - Cesium
+Opens in a new window
+
+github.com
+3d-tiles/RESOURCES.md at main - GitHub
+Opens in a new window
+
+cesium.com
+CesiumJS – Cesium
+Opens in a new window
+
+dev-sandcastle.cesium.com
+Sandcastle | CesiumJS - Cesium
+Opens in a new window
+
+sandcastle.cesium.com
+Google Photorealistic 3D Tiles | Sandcastle | CesiumJS
+Opens in a new window
+
+classic.yarnpkg.com
+@cesium/widgets | Yarn
+Opens in a new window
+
+sandcastle.cesium.com
+Gallery - Sandcastle | CesiumJS
+Opens in a new window
+
+pmc.ncbi.nlm.nih.gov
+Multi-Resolution 3D Rendering for High-Performance Web AR - PMC
+Opens in a new window
+
+cesium.com
+Visualizing Imagery - Cesium
+Opens in a new window
+
+mdpi.com
+A 3D WebGIS Open-Source Prototype for Bridge Inspection Data Management - MDPI
+Opens in a new window
+
+pdfs.semanticscholar.org
+A Convenient Tool for District Heating Route Optimization Based on Parallel Ant Colony System Algorithm and 3D WebGIS - Semantic Scholar
+Opens in a new window
+
+repository.oceanbestpractices.org
+Open Geospatial Consortium Volume 6: OGC CDB Rules for Encoding Data using OpenFlight - Repository OceanBestPractices
+Opens in a new window
+
+science.gov
+infrared scene simulation: Topics by Science.gov
+Opens in a new window
+
+researchgate.net
+(PDF) Embedded Night-Vision System for Pedestrian Detection - ResearchGate
+Opens in a new window
+
+dev.to
+Why Multitasking With AI Coding Agents Breaks Down (And How I Fixed It)
+Opens in a new window
+
+gist.github.com
+Claude Code Swarm Orchestration Skill - Complete guide to multi-agent coordination with TeammateTool, Task system, and all patterns - GitHub Gist
+Opens in a new window
+
+code.claude.com
+Orchestrate teams of Claude Code sessions
+Opens in a new window
+
+reddit.com
+I got tired of managing 10+ terminal tabs for my Claude sessions, so I built agent-view : r/ClaudeAI - Reddit
+Opens in a new window
+
+spatialintelligence.ai
+Bilawal Sidhu Podcast | Substack
+Opens in a new window
+
+youtube.com
+Bilawal Sidhu on “What is the Case for Techno-Optimism Around AI?” - YouTube
+Opens in a new window
+
+ntts-prod.s3.amazonaws.com
+Software Catalog 2025-2026 - AWS
+Opens in a new window
+
+earthdata.nasa.gov
+Synthetic Aperture Radar (SAR) - NASA Earthdata
+Opens in a new window
+
+cesium.com
+Tiling 3D Buildings - Cesium
+Opens in a new window
+
+adsbexchange.com
+Apple/Android Web App for ADS-B Exchange
+Opens in a new window
+
+reddit.com
+Built a terminal IDE for managing multiple AI coding agents simultaneously - Reddit
+Opens in a new window
+
+youtube.com
+Bilawal Sidhu - YouTube
+Opens in a new window
+
+youtube.com
+Bilawal Sidhu - YouTube
+Opens in a new window
+
+news.aakashg.com
+He Was Promoted 3x in 5 Years at Google (Bilawal Sidhu) - Product Growth
+Opens in a new window
+
+cesium.com
+NASA's Global Imagery Browse Services (GIBS) Provides Access to Public Catalog of 100+ Satellite Imagery Layers - Cesium
+Opens in a new window
+
+satvis.space
+Satellite Orbit Visualization
+Opens in a new window
+
+celestrak.org
+Visually Observing Earth Satellites - CelesTrak
+Opens in a new window
+
+cesium.com
+Hosting 3D Content - Cesium
+Opens in a new window
+
+cesium.com
+Creating Videos with Real-World Data from Cesium in Adobe After Effects
+Opens in a new window
+
+open.substack.com
+I Built a Spy Satellite Simulator in a Browser. Here's What I Learned. - Substack
+Opens in a new window
+
+pubs.usgs.gov
+System characterization report on the WorldView-3 Imager - USGS Publications Warehouse
+Opens in a new window
+
+bitrebels.com
+Ex-Google Maps PM Coded A Real-Time Worldview Spy-Inspired Dashboard In 3 Days
+Opens in a new window
+
+discuss.privacyguides.net
+WorldView: A Browser-Based Spy Satellite Simulator Built With AI - General
+Opens in a new window
+
+discuss.privacyguides.net
+General - Privacy Guides Community
+Opens in a new window
+
+slideshare.net
+Emerging 3D Scanning Technologies for PropTech | PDF - Slideshare
+Opens in a new window
+
+gijn.org
+GIJN's Updated Guide to Planespotting and Flight Tracking
+Opens in a new window
+
+james.darpinian.com
+How "See A Satellite Tonight" Works | James Darpinian
+Opens in a new window
+
+data.austintexas.gov
+Download - City of Austin Open Data Portal - AustinTexas.gov
+Opens in a new window
+
+een.com
+Now Available: Interactive Cloud Security Camera Mapping - Eagle Eye Networks
+Opens in a new window
+
+github.com
+glsl-shaders/crt/crtsim.glslp at master - GitHub
+Opens in a new window
+
+youtube.com
+Creating an Anime Cel Shader in Blender 2.8 (Part 4) | Project Feline Indie Game Devlog #15 - YouTube
+Opens in a new window
+
+buildingtheopenmetaverse.org
+Bilawal Sidhu - Building the Open Metaverse
+Opens in a new window
+
+spatialintelligence.ai
+Archive - Map the World by Bilawal Sidhu
+Opens in a new window
+
+bytefish.de
+Flight Tracking with the OpenSky Network API, Angular and ASP.NET Core - bytefish.de
+Opens in a new window
+
+medium.com
+Build a Real-time Flight Tracker with NextJS, TailwindCSS, and React-map-gl: A Step-by-Step Tutorial(Part 1) | by Lawe Sosah | Medium
+Opens in a new window
+
+reddit.com
+Build Your Own Flight Tracking Application with Python and Open Air Traffic Data - Reddit
+Opens in a new window
+
+theseus.fi
+Satellite Visualization in Web browsers - Theseus
+Opens in a new window
+
+cesium.com
+Cesium for Omniverse: Capturing Images and Video
+Opens in a new window
+
+youtube.com
+Mapping in 3D: Bringing Geospatial Data to Life with Cesium Stories - YouTube
+Opens in a new window
+
+researchgate.net
+(PDF) Spatial video and GIS - ResearchGate
+Opens in a new window
+
+ntrs.nasa.gov
+20100030352.pdf - NASA Technical Reports Server
+Opens in a new window
+
+mdpi.com
+An Immersive Hydroinformatics Framework with Extended Reality for Enhanced Visualization and Simulation of Hydrologic Data - MDPI
+Opens in a new window
+
+tandfonline.com
+Full article: Web-based 4D visualization of marine geo-data using WebGL
+Opens in a new window
+
+mdpi.com
+A Convenient Tool for District Heating Route Optimization Based on Parallel Ant Colony System Algorithm and 3D WebGIS - MDPI
+Opens in a new window
+
+researchgate.net
+Modeling atmospheric effects in the infrared scene generator based on OpenGL
+Opens in a new window
+
+github.com
+ComputationalRadiometry/abbrev.tex at master - GitHub
+Opens in a new window
+
+cs.csub.edu
+Expressive Skinning Methods for 3D Character Animation - Computer Science
+Opens in a new window
+
+youtube.com
+Gemini CLI Tutorial #1 - Introduction & Setup
+Opens in a new window
+
+youtube.com
+How to 10X Claude Code workflows (from its creator)
+Opens in a new window
+
+catalog.data.gov
+data.austintexas.gov - 28 - Dataset - Catalog
+Opens in a new window
+
+catalog.data.gov
+JSON File - Traffic Cameras - Dataset - Catalog - Data.gov
+Opens in a new window
+
+youtube.com
+The AI-Powered Tools Supercharging Your Imagination | Bilawal Sidhu | TED - YouTube
+Opens in a new window
+
+transportation.gov
+Commercial Remote Sensing and Spatiall Information Technologies Program - Department of Transportation
+Opens in a new window
+
+adsbexchange.com
+Track Specific Aircraft - ADS-B Exchange
+Opens in a new window
+
+github.com
+rickstaa/awesome-adsb: A curated list of awesome ASD-B tools, projects, images, resources and other shiny things. - GitHub
+Opens in a new window
+
+threejs3d.com
+satellite-tracker | Cesium 项目库
+Opens in a new window
+
+javascript.plainenglish.io
+Create a Complete Satellite Tracker from Scratch in JavaScript | by Omar Shehata
+Opens in a new window
+
+fas.org
+INRIX x MetroLab - Federation of American Scientists
+Opens in a new window
+
+data.austintexas.gov
+https://data.austintexas.gov/api/views/28ys-ieqv/rows.xml?accessType=DOWNLOAD
+Opens in a new window
+
+youtube.com
+Multi-agent development in VS Code
+Opens in a new window
+
+youtube.com
+The Simplest Way to Run Parallel AI Agents Claude code - YouTube
+Opens in a new window
+
+medium.com
+One Codebase, Three Runtimes: How GSD Targets Claude Code, OpenCode, and Gemini CLI | by Rick Hightower | Feb, 2026 | Medium
+Opens in a new window
+
+growthmethod.com
+AI Agent Orchestration Tools: What Marketers Actually Need | Growth Method
+Opens in a new window
+
+opensky-network.org
+Data Tools - The OpenSky Network
+Opens in a new window
+
+data.mobility.austin.gov
+Austin Transportation Data and Performance Hub
+Opens in a new window
+
+courses.cms.caltech.edu
+Ray Tracing + Cel Shading Renderer - CMS, Caltech
+Opens in a new window
+
+stackone.com
+The AI Agent Tools Landscape: 120+ Tools Mapped [2026] - StackOne
+Opens in a new window
+
+reddit.com
+How to effectively use multiple AI models (codex/claude/Gemini etc) to review each others work without constant copy pasting : r/vibecoding - Reddit
+Opens in a new window
+
+developers.google.com
+Google Maps Platform Documentation | Google Maps Tile API | Google for Developers
+Opens in a new window
+
+mapsplatform.google.com
+Blog: Commonly asked questions about our recently launched Photorealistic 3D Tiles
+Opens in a new window
+
+feeds.acast.com
+How to Be a Better Human - Acast
+Opens in a new window
+
+poorstuart.com
+TED Talks Daily - Poor Stuart's Guide
+Opens in a new window
+
+quora.com
+Aside for DeepSeek, which was launched last month, do you think there is anything special about it compared to Chat GPT? Which one do you prefer to use? - Quora
+Opens in a new window
+
+globalplayer.com
+TED Talks Daily - Podcast - Global Player
+Opens in a new window
+
+cesium.com
+CesiumJS Quickstart – Cesium
+Opens in a new window
+
+youtube.com
+CesiumJS in 1 Hour - From Zero to Hero - YouTube
+Opens in a new window
+
+tobiasbu.wordpress.com
+OpenGL – Night vision shader - tbu - WordPress.com
+Opens in a new window
+
+youtube.com
+OpenGL Shader Programming 04: Cel Shading - YouTube
+Opens in a new window
+
+ranveersequeira.medium.com
+Building Full-Stack Applications with Gemini CLI + tmux: A Repo-First Multi-Agent Workflow
+Opens in a new window
+
+tembo.io
+The 2026 Guide to Coding CLI Tools: 15 AI Agents Compared - Tembo.io
+Opens in a new window
+
+milsatmagazine.com
+section alone offers analysis regarding today's SATCOM market and where it may well be heading in the future. Articles from the pros at the Satellite Industry Association, Near Earth LLC, World Teleport Association, Euroconsult and NSR all tackle informative themes ranging from the state of our satellite industry, to what satellites are expected to be launching between now and 2018, with a most comprehensive overview of the 2nd Annual Space Business - MilsatMagazine
+Opens in a new window
+
+community.cesium.com
+API Credentials: Tutorial for Photorealistic 3D Tiles from Google Maps Platform in Cesium for Omniverse
+Opens in a new window
+
+cesium.com
+Terrain – Cesium
+Opens in a new window
+
+cesium.com
+Graphics Tech in Cesium - Rendering a Frame
+Opens in a new window
+
+github.com
+tamo3/pdx-flight: Flight tracker using Cesium/Resium - GitHub
+Opens in a new window
+
+reddit.com
+How to build a flight tracker with Cesium (with real data from FlightRadar24) - Reddit
+Opens in a new window
+
+adsbexchange.com
+Enterprise API - ADS-B Exchange
+Opens in a new window
+
+adsbexchange.com
+REST API Information - ADS-B Exchange
+Opens in a new window
+
+adsbexchange.com
+ADS-B Exchange: Serving the Flight Tracking Enthusiast
+Opens in a new window
+
+reddit.com
+I created a Satellite Orbit Visualizer! : r/amateursatellites - Reddit
+Opens in a new window
+
+github.com
+glsl-shaders/crt/shaders/glow/linearize.glsl at master · libretro/glsl-shaders - GitHub
+Opens in a new window
+
+forums.unrealengine.com
+[UE5] Anime/Toon/Cel Shading Model (WORKS WITH LAUNCHER ENGINE VERSIONS)
+Opens in a new window
+
+scribd.com
+Appendix A - Nouns | PDF | Nawaz Sharif | Pakistan - Scribd
+Opens in a new window
+
+worksheets.codalab.org
+6 - CodaLab Worksheets
+Opens in a new window
+
+github.com
+Flowm/satvis: Satellite orbit visualization and pass prediction with Cesium.js - GitHub
+Opens in a new window
+
+its.txdot.gov
+Austin - Cameras
+Opens in a new window
+
+data.austintexas.gov
+Download - AustinTexas.gov
+Opens in a new window
+
+arcgis.com
+City of Austin Traffic Cameras - Overview - ArcGIS Online
+Opens in a new window
+
+youtube.com
+New Anime Cel/Toon Shader for Blender 4.2 and Beyond [EEVEE] - PART 1 Comfee Tutorial - YouTube
+Opens in a new window
+
+reddit.com
+Re-creating the iconic Anime Cel Shader from Guilty Gear Xrd in Blender - Reddit
+Opens in a new window
+
+youtube.com
+Physically Based Cel Shading - YouTube
+Opens in a new window
+
+visualstudiomagazine.com
+Devs Diss Visual Studio's AI
+Opens in a new window
+
+reddit.com
+CCBot - C&C Claude Code, Codex, and Gemini CLI from your phone via Telegram - Reddit
+Opens in a new window
+
+github.blog
+GitHub Copilot CLI is now generally available
+Opens in a new window
+
+buildingtheopenmetaverse.org
+Bilawal Sidhu: A Mind Living at the Intersection of Bits and Atoms
+Opens in a new window
+
+github.com
+SpaceNetLab/satellite-image-deep-learning - GitHub
+Opens in a new window
+
+github.com
+Jieyab89/OSINT-Cheat-sheet - GitHub
+Opens in a new window
+
+cesium.com
+Create 3D Reality Models from Photos – Cesium
+Opens in a new window
+
+developers.amadeus.com
+Best Open Source Flight Data Providers for Developers
+Opens in a new window
+
+forums.x-plane.org
+New User - Opensky vs RealTraffic vs ADS-B - LiveTraffic Support - X-Plane.Org Forum
+Opens in a new window
+
+reddit.com
+Are there any fully free and open ADS-B APIs? I want to build a radar app as an aviation fan. : r/ADSB - Reddit
+Opens in a new window
+
+github.com
+itsmedmd/satellite-tracker: Track positions and orbits of over 22000 satellites orbiting the Earth in a 3D geospatial viewer powered by Cesium. - GitHub
+Opens in a new window
+
+community.cesium.com
+Yet another satellite tracking web app - General - Cesium Community
+Opens in a new window
+
+community.cesium.com
+sources for satellite data in Cesium compatible form
+Opens in a new window
+
+github.com
+glsl-shaders/cel/shaders/MMJ_Cel_Shader.glsl at master · libretro/glsl-shaders - GitHub
+Opens in a new window
+
+reddit.com
+What GLSL shader is closest to slang's CRT Royale? : r/RetroArch - Reddit
+Opens in a new window
+
+geeky-gadgets.com
+Build Complex Apps from Prompts with the Gemini 3.0 Model & CLI - Geeky Gadgets
+Opens in a new window
+
+augmentcode.com
+AI Terminal Coding Tools That Actually Work in 2025
+Opens in a new window
+
+scouts.yutori.com
+Coding Agent IDE Updates | Yutori
+Opens in a new window
+
+geminicli.com
+Browse Extensions - Gemini CLI
+Opens in a new window
+
+spatialintelligence.ai
+Map the World by Bilawal Sidhu | Substack
+Opens in a new window
+
+convergencedallas.ai
+BILAWAL SIDHU - Convergence AI Dallas
+Opens in a new window
+
+substack.com
+Bilawal Sidhu - Substack
+Opens in a new window
+
+youtube.com
+Artificial Intelligence Livestream - Bilawal Sidhu - AI & Creativity - YouTube
+Opens in a new window
+
+code.nasa.gov
+Simulation - NASA Open Source Software
+Opens in a new window
+
+pure.iiasa.ac.at
+The web-based simulation and information service for multi-hazard impact chains. Design document. - IIASA PURE
+Opens in a new window
+
+cesium.com
+CesiumJS – Cesium
+Opens in a new window
+
+community.cesium.com
+Google Photorealistic 3D Tiles in CesiumJS - Cesium Community
+Opens in a new window
+
+youtube.com
+How to use Photorealistic 3D tiles - YouTube
+Opens in a new window
+
+opensky-network.org
+OpenSky Network Data
+Opens in a new window
+
+openassistantgpt.io
+Integrate ADS-B Exchange API with Your Flight Tracking Assistant - OpenAssistantGPT
+Opens in a new window
+
+adsbexchange.com
+Personal Use Aircraft Data via RapidAPI - ADS-B Exchange
+Opens in a new window
+
+github.com
+Jeff0Brewer/satellite-vis: A tool to visualize and explore all satellites from the Celestrak NORAD GP element sets. - GitHub
+Opens in a new window
+
+developers.arcgis.com
+Satellites in 3D view | Sample Code | ArcGIS Maps SDK for JavaScript - Esri Developer
+Opens in a new window
+
+cesium.com
+Visualize a Proposed Building in a 3D City - Cesium
+Opens in a new window
+
+cesium.com
+Create 3D Tiles from OpenDroneMap in WebODM - Cesium
+Opens in a new window
+
+community.cesium.com
+Streaming realtime data to CesiumJS - Cesium Community
+Opens in a new window
+
+youtube.com
+How to project video into 3dtileset in Cesiumjs - YouTube
+Opens in a new window
+
+talks.godotengine.org
+GodotCon Boston 2025 - Godot Engine
+Opens in a new window
+
+siggraph.org
+Proceedings of the Special Interest Group on Computer Graphics and Interactive Techniques Conference Talks - acm siggraph
+Opens in a new window
+
+gdmc.nl
+From Static to Dynamic Visualization of the Sea Surface Height on a Web GIS Application - GDMC
+Opens in a new window
+
+casual1479.rssing.com
+Casual Effects - RSSing.com
+Opens in a new window
+
+github.com
+Project #WorldView explores how LLMs perceive our world through language - GitHub
+Opens in a new window
+
+github.com
+Bilawal Sidhu bilawalsidhu - GitHub
+Opens in a new window
+
+code.nasa.gov
+NASA Open Source Software
+Opens in a new window
+
+apps.dtic.mil
+Satellite Tasking via a Tablet Computer - DTIC
+Opens in a new window
+
+partnerships.gsfc.nasa.gov
+Celebrating 20 Years of Core Flight Software - Strategic Partnerships Office
+Opens in a new window
+
+spie.org
+Algorithms and Technologies for Multispectral, Hyperspectral, and Ultraspectral Imagery XVIII | (2012) | Publications | SPIE
+Opens in a new window
+
+staging.app.deepknowledge.io
+TechKnowledge University v8::Powered by DeepKnowledge
+Opens in a new window
+
+usiofindia.org
+USI Strategic Year Book 2024 - United Service Institution of India
+Opens in a new window
+
+cesium.com
+Photorealistic 3D Tiles from Google Maps Platform in Cesium for Unity
+Opens in a new window
+
+cesium.com
+Photorealistic 3D Tiles from Google Maps Platform in Cesium for Unreal
+Opens in a new window
+
+cesium.com
+Google Maps Platform Photorealistic 3D Tiles - Cesium
+Opens in a new window
+
+youtube.com
+Anime Cel-Shading Shader Tutorial for Blender 4.2+ - YouTube
+Opens in a new window
+
+youtube.com
+Anime Cel Shader for Blender 4.1 and Older [EEVEE] - Comfee Tutorial - YouTube
+Opens in a new window
+
+reddit.com
+I made a stylised cel-shading effect using Shader Graph : r/Unity3D - Reddit
+Opens in a new window
+
+youtube.com
+CelesTrak Orbit Visualization - Spacecast 26 - YouTube
+Opens in a new window
+
+community.cesium.com
+27/5000 How do I load all the satellite debris data (TLE) into Cesium？
+Opens in a new window
+
+community.cesium.com
+About Live Air Traffic Control - General - Cesium Community
+Opens in a new window
+
+opensky-network.org
+OpenSky API
+Opens in a new window
+
+opensky-network.org
+The OpenSky Network
+Opens in a new window

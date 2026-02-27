@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WorldView Spatial Simulator</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.0.0/satellite.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="crt-overlay"></div>
+    <div class="lens-mask"></div>
+    <div class="scan-line"></div>
+
+    <div id="top-left-hud" class="hud-panel">
+        <h1>WORLDVIEW_V2.6</h1>
+        <p class="classification">TOP SECRET // SI-TK // NOFORN</p>
+        <div style="font-size: 0.6rem; margin-top: 10px; color: var(--hud-neon-cyan);">
+            <p>REC_TIME: <span id="current-time">2026-02-12 02:45:36Z</span></p>
+            <p>UPTIME: <span id="uptime-counter">00:00:00</span></p>
+            <p>LATENCY: 42MS</p>
+        </div>
+        <div id="data-systems" style="margin-top: 20px; border-top: 1px solid var(--hud-border); padding-top: 15px;">
+            <p style="font-size: 0.6rem; letter-spacing: 2px; color: var(--hud-neon-cyan); margin-bottom: 10px;">SYSTEM_OVERLAYS</p>
+            <div class="toggle-group">
+                <input type="checkbox" id="toggle-aviation" checked>
+                <label for="toggle-aviation">SIGINT_AVIATION</label>
+            </div>
+            <div class="toggle-group">
+                <input type="checkbox" id="toggle-orbital" checked>
+                <label for="toggle-orbital">ELINT_ORBITAL</label>
+            </div>
+            <div class="toggle-group">
+                <input type="checkbox" id="toggle-cctv">
+                <label for="toggle-cctv">VISINT_CCTV_NODES</label>
+            </div>
+        </div>
+    </div>
+
+    <div id="right-panel" class="hud-panel">
+        <div class="control-group">
+            <label>BLOOM</label>
+            <input type="range" id="input-bloom" min="0" max="100" value="100">
+        </div>
+        <div class="control-group">
+            <label>SHARPEN</label>
+            <input type="range" id="input-sharpen" min="0" max="100" value="50">
+        </div>
+        <div class="control-group">
+            <label>HUD</label>
+            <select id="select-hud">
+                <option value="tactical">Tactical</option>
+                <option value="minimal">Minimal</option>
+                <option value="full">Full Scan</option>
+            </select>
+        </div>
+        <div class="control-group active-group">
+            <label>PANOPTIC</label>
+            <input type="range" id="input-panoptic" min="0" max="100" value="60">
+        </div>
+    </div>
+
+    <div id="bottom-panel" class="hud-panel">
+        <div class="location-tabs">
+            <button class="active">Tower Bridge</button>
+            <button>Austin</button>
+            <button>Tokyo</button>
+        </div>
+        <div class="mode-toggles">
+            <button id="btn-normal">Normal</button>
+            <button id="btn-crt" class="active">CRT</button>
+            <button id="btn-nvg">NVG</button>
+            <button id="btn-flir">FLIR</button>
+            <button id="btn-anime">Anime</button>
+        </div>
+    </div>
+
+    <div id="cesiumContainer"></div>
+    <div id="error-hud" style="position:absolute; bottom:100px; left:20px; color:red; z-index:100; font-family:monospace; background:rgba(0,0,0,0.8); padding:10px; display:none;"></div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
